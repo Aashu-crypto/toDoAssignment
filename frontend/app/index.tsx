@@ -3,46 +3,31 @@ import { View, Text, TextInput, Button, FlatList } from "react-native";
 import { fetchTodos, createTodo } from "../api";
 import TodoItem from "@/components/TodoItem";
 import { ThemedView } from "@/components/ThemedView";
+import Enter from "../components/Enter";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Todo from "../components/Todo";
 
 const HomeScreen: React.FC = () => {
-  const [todos, setTodos] = useState([]);
-  const [newTodo, setNewTodo] = useState("");
-  const userId = "user123"; // Replace with the actual user ID logic
 
-  const loadTodos = async () => {
-    const data = await fetchTodos(userId);
-    setTodos(data);
-  };
+  
+  const [userId, setUserId] = useState<string>("");
 
   useEffect(() => {
-    loadTodos();
+    const fetchUser = async () => {
+      const data = await AsyncStorage.getItem("userEmail");
+      console.log(data);
+      setUserId(data);
+    };
+    fetchUser();
   }, []);
-
-  const addTodo = async () => {
-    await createTodo(newTodo, userId);
-    setNewTodo("");
-    loadTodos();
-  };
 
   return (
     <ThemedView className="p-4 flex-1">
-      <Text className="text-2xl font-bold mb-4">Todo List</Text>
-      <View className="flex-row mb-4">
-        <TextInput
-          className="flex-1 border border-gray-300 p-2"
-          placeholder="New Todo"
-          value={newTodo}
-          onChangeText={setNewTodo}
-        />
-        <Button title="Add" onPress={addTodo} />
-      </View>
-      <FlatList
-        data={todos}
-        renderItem={({ item }) => (
-          <TodoItem todo={item} refreshTodos={loadTodos} />
-        )}
-        keyExtractor={(item) => item.id}
-      />
+      {userId.length == 0 ? (
+        <Enter />
+      ) : (
+       <Todo/>
+      )}
     </ThemedView>
   );
 };
