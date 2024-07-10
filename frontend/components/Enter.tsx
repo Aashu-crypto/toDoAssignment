@@ -10,8 +10,13 @@ import Animated, {
 } from "react-native-reanimated";
 import { backendHost } from "@/constants/config";
 import axios from "axios";
-const Enter = () => {
-  const [mail, setMail] = useState<string>();
+
+interface EnterProps {
+  onUserIdSubmit: (id: string) => void;
+}
+
+const Enter: React.FC<EnterProps> = ({ onUserIdSubmit }) => {
+  const [mail, setMail] = useState<string>("");
 
   const inputOpacity = useSharedValue(0);
   const buttonOpacity = useSharedValue(0);
@@ -36,20 +41,13 @@ const Enter = () => {
   const handleSubmit = async () => {
     if (mail) {
       try {
-        // Make the API request
-        console.log(`${backendHost}/`);
-        
         const response = await axios.post(`${backendHost}/user`, {
           userId: mail,
         });
-
-        console.log(response);
         await AsyncStorage.setItem("userEmail", mail);
-        // Alert the user
         Alert.alert("Success", "Your ID has been saved successfully!");
+        onUserIdSubmit(mail); // Update the user ID in the HomeScreen component
       } catch (e) {
-        console.log(e);
-
         Alert.alert("Error", "Failed to save your ID.");
       }
     } else {

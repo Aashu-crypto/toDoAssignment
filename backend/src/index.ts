@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import { PrismaClient } from "@prisma/client";
-import { ReplicacheExpress } from "replicache";
 
 const app = express();
 const prisma = new PrismaClient();
@@ -37,7 +36,7 @@ app.post("/user", async (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  console.log("api hit");
+  console.log("API hit");
   res.json({ working: "Fine" });
 });
 
@@ -66,11 +65,17 @@ app.get("/todos/:userId", async (req, res) => {
 app.put("/todos/:id", async (req, res) => {
   const { id } = req.params;
   const { title, completed } = req.body;
-  const todo = await prisma.todo.update({
-    where: { id },
-    data: { title, completed },
-  });
-  res.json(todo);
+
+  try {
+    const todo = await prisma.todo.update({
+      where: { id },
+      data: { title, completed },
+    });
+    res.json(todo);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "An error occurred while updating the todo" });
+  }
 });
 
 app.delete("/todos/:id", async (req, res) => {
@@ -92,39 +97,49 @@ app.delete("/todos/:id", async (req, res) => {
   }
 });
 
-// Replicache Integration
-const replicache = new ReplicacheExpress({
-  mutators: {
-    async createTodo(tx, { id, title, userId, completed }) {
-      await prisma.todo.create({
-        data: { id, title, userId, completed },
-      });
-    },
-    async updateTodo(tx, { id, title, completed }) {
-      await prisma.todo.update({
-        where: { id },
-        data: { title, completed },
-      });
-    },
-    async deleteTodo(tx, { id }) {
-      await prisma.todo.delete({
-        where: { id },
-      });
-    },
-    async completeTodo(tx, { id, completed }) {
-      await prisma.todo.update({
-        where: { id },
-        data: { completed },
-      });
-    },
-  },
-  query: async () => {
-    const todos = await prisma.todo.findMany();
-    return { todos };
-  },
+// Replicache Push Endpoint
+app.post("/replicache/push", async (req, res) => {
+  const { mutations } = req.body;
+
+  try {
+    for (const mutation of mutations) {
+      const { name, args } = mutation;
+
+      switch (name) {
+        case "createTodo":
+          await prisma.todo.create({ data: args });
+          break;
+        case "updateTodo":
+          await prisma.todo.update({ where: { id: args.id }, data: args });
+          break;
+        case "deleteTodo":
+          await prisma.todo.delete({ where: { id: args.id } });
+          break;
+        case "completeTodo":
+          await prisma.todo.update({ where: { id: args.id }, data: { completed: args.completed } });
+          break;
+        default:
+          throw new Error(`Unknown mutation: ${name}`);
+      }
+    }
+
+    res.sendStatus(200);
+  } catch (error) {
+    console.error("Error processing mutations:", error);
+    res.status(500).json({ error: "Error processing mutations" });
+  }
 });
 
-app.use("/replicache", replicache);
+// Replicache Pull Endpoint
+app.get("/replicache/pull", async (req, res) => {
+  try {
+    const todos = await prisma.todo.findMany();
+    res.json({ todos });
+  } catch (error) {
+    console.error("Error fetching todos:", error);
+    res.status(500).json({ error: "Error fetching todos" });
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

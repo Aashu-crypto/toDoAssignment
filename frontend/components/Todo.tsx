@@ -14,6 +14,7 @@ import { AntDesign, MaterialIcons } from "@expo/vector-icons";
 import Checkbox from "expo-checkbox";
 import { Replicache, MutatorDefs } from "replicache";
 import { backendHost } from "@/constants/config";
+import 'react-native-get-random-values';
 
 interface TodoItem {
   id: string;
@@ -50,23 +51,28 @@ const Todo: React.FC<TodoProps> = ({ userId }) => {
   useEffect(() => {
     const initReplicache = async () => {
       const rep = new Replicache<Mutators>({
-        licenseKey: "YOUR_REPLICACHE_LICENSE_KEY",
-        name: `todo-app-${userId}`,
-        url: `${backendHost}/replicache`,
+        licenseKey: "l8db88c384b22423eac07b5e033f3e69e",
+        name: `Aashu`,
+        pushURL: `${backendHost}/replicache-push`,
+        pullURL: `${backendHost}/replicache-pull`,
         mutators: {
           async createTodo(tx, { id, title, userId, completed }) {
             await tx.put(`todo/${id}`, { id, title, userId, completed });
           },
           async updateTodo(tx, { id, title, completed }) {
             const todo = await tx.get(`todo/${id}`);
-            await tx.put(`todo/${id}`, { ...todo, title, completed });
+            if (todo) {
+              await tx.put(`todo/${id}`, { ...todo, title, completed });
+            }
           },
           async deleteTodo(tx, { id }) {
             await tx.del(`todo/${id}`);
           },
           async completeTodo(tx, { id, completed }) {
             const todo = await tx.get(`todo/${id}`);
-            await tx.put(`todo/${id}`, { ...todo, completed });
+            if (todo) {
+              await tx.put(`todo/${id}`, { ...todo, completed });
+            }
           },
         },
       });
@@ -77,7 +83,7 @@ const Todo: React.FC<TodoProps> = ({ userId }) => {
         (tx) => tx.scan({ prefix: "todo/" }).entries().toArray(),
         {
           onData: (entries: [string, TodoItem][]) => {
-            setTodos(entries.map(([key, value]) => value));
+            setTodos(entries.map(([_, value]) => value));
           },
         }
       );
