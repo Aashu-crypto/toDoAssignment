@@ -1,45 +1,219 @@
-import { View, Text, FlatList, Button, TextInput } from "react-native";
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  FlatList,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Pressable,
+} from "react-native";
+import { AntDesign, MaterialIcons } from "@expo/vector-icons";
+import Checkbox from "expo-checkbox";
+import { Replicache, MutatorDefs } from "replicache";
+import { backendHost } from "@/constants/config";
 
-type Props = {};
+interface TodoItem {
+  id: string;
+  title: string;
+  userId: string;
+  completed: boolean;
+}
 
-const Todo = (props: Props) => {
-  const [newTodo, setNewTodo] = useState("");
-  const [todos, setTodos] = useState([]);
-  const loadTodos = async () => {
-    const data = await fetchTodos(userId);
-    setTodos(data);
-  };
+interface TodoProps {
+  userId: string;
+}
+
+interface Mutators extends MutatorDefs {
+  createTodo: (
+    tx: any,
+    { id, title, userId, completed }: TodoItem
+  ) => Promise<void>;
+  updateTodo: (
+    tx: any,
+    { id, title, completed }: { id: string; title: string; completed: boolean }
+  ) => Promise<void>;
+  deleteTodo: (tx: any, { id }: { id: string }) => Promise<void>;
+  completeTodo: (
+    tx: any,
+    { id, completed }: { id: string; completed: boolean }
+  ) => Promise<void>;
+}
+
+const Todo: React.FC<TodoProps> = ({ userId }) => {
+  const [newTodo, setNewTodo] = useState<string>("");
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [rep, setRep] = useState<Replicache<Mutators> | null>(null);
 
   useEffect(() => {
-    loadTodos();
-  }, []);
+    const initReplicache = async () => {
+      const rep = new Replicache<Mutators>({
+        licenseKey: "YOUR_REPLICACHE_LICENSE_KEY",
+        name: `todo-app-${userId}`,
+        url: `${backendHost}/replicache`,
+        mutators: {
+          async createTodo(tx, { id, title, userId, completed }) {
+            await tx.put(`todo/${id}`, { id, title, userId, completed });
+          },
+          async updateTodo(tx, { id, title, completed }) {
+            const todo = await tx.get(`todo/${id}`);
+            await tx.put(`todo/${id}`, { ...todo, title, completed });
+          },
+          async deleteTodo(tx, { id }) {
+            await tx.del(`todo/${id}`);
+          },
+          async completeTodo(tx, { id, completed }) {
+            const todo = await tx.get(`todo/${id}`);
+            await tx.put(`todo/${id}`, { ...todo, completed });
+          },
+        },
+      });
 
-  const addTodo = async () => {
-    await createTodo(newTodo, userId);
-    setNewTodo("");
-    loadTodos();
+      setRep(rep);
+
+      const unsubscribe = rep.subscribe(
+        (tx) => tx.scan({ prefix: "todo/" }).entries().toArray(),
+        {
+          onData: (entries: [string, TodoItem][]) => {
+            setTodos(entries.map(([key, value]) => value));
+          },
+        }
+      );
+
+      return () => unsubscribe();
+    };
+
+    initReplicache();
+  }, [userId]);
+
+  const handleToDoAdd = () => {
+    if (rep) {
+      const id = `todo-${Math.random().toString(36).substr(2, 9)}`;
+      rep.mutate.createTodo({ id, title: newTodo, userId, completed: false });
+      setNewTodo("");
+    }
   };
-  return (
-    <View className="flex-1 justify-center items-center ">
-      <View className="flex-row mb-4">
-        <TextInput
-          className="flex-1 border border-gray-300 p-2"
-          placeholder="New Todo"
-          value={newTodo}
-          onChangeText={setNewTodo}
+
+  const handleDelete = (id: string) => {
+    if (rep) {
+      rep.mutate.deleteTodo({ id });
+    }
+  };
+
+  const handleUpdate = (id: string, title: string, completed: boolean) => {
+    if (rep) {
+      rep.mutate.updateTodo({ id, title, completed });
+    }
+  };
+
+  const renderItem = ({ item }: { item: TodoItem }) => (
+    <View style={styles.itemContainer}>
+      <View style={styles.itemContent}>
+        <Checkbox
+          style={styles.checkbox}
+          value={item.completed}
+          onValueChange={(newValue) =>
+            handleUpdate(item.id, item.title, newValue)
+          }
+          color={item.completed ? "#55BCF6" : "#55BCF6"}
         />
-        <Button title="Add" onPress={addTodo} />
+        <Text style={styles.itemText}>{item.title}</Text>
       </View>
-      {/* <FlatList
-        data={todos}
-        renderItem={({ item }) => (
-          <TodoItem todo={item} refreshTodos={loadTodos} />
-        )}
-        keyExtractor={(item) => item.id}
-      /> */}
+      <Pressable onPress={() => handleDelete(item.id)}>
+        <MaterialIcons name="delete-outline" size={20} color="#E8EAED" />
+      </Pressable>
     </View>
+  );
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1 }}
+    >
+      <View style={{ flex: 1, marginHorizontal: 12 }}>
+        <View style={{ padding: 8, marginTop: 56 }}>
+          <Text style={{ fontSize: 24, fontWeight: "bold" }}>
+            Today’s tasks: {userId}
+          </Text>
+        </View>
+        <FlatList
+          data={todos}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          style={{ marginTop: 20 }}
+        />
+        <View
+          style={{
+            flexDirection: "row",
+            marginBottom: 16,
+            position: "absolute",
+            bottom: 4,
+            paddingHorizontal: 12,
+          }}
+        >
+          <TextInput
+            style={{
+              flex: 1,
+              padding: 8,
+              borderRadius: 24,
+              backgroundColor: "white",
+              shadowOpacity: 0.3,
+              textAlign: "center",
+            }}
+            placeholder="Write a task"
+            placeholderTextColor="#E8EAED"
+            value={newTodo}
+            onChangeText={setNewTodo}
+          />
+          <TouchableOpacity
+            style={{
+              backgroundColor: "white",
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              justifyContent: "center",
+              alignItems: "center",
+              shadowOpacity: 0.3,
+              marginLeft: 8,
+            }}
+            onPress={handleToDoAdd}
+          >
+            <AntDesign name="plus" size={32} color="#E8EAED" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 };
 
 export default Todo;
+
+const styles = StyleSheet.create({
+  itemContainer: {
+    backgroundColor: "white",
+    marginVertical: 8,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  itemContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkbox: {
+    borderRadius: 4,
+  },
+  itemText: {
+    fontSize: 14,
+  },
+});
